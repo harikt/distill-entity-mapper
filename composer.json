@@ -1,0 +1,22 @@
+{
+    "name": "distill/entity-mapper",
+    "description": "Object Mapping",
+    "license": "UNLICENSE",
+    "authors": [
+        {
+            "name": "Ralph Schindler",
+            "email": "ralph@ralphschindler.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {},
+    "autoload": {
+        "psr-4": {"Distill\\EntityMapper\\": "src/"}
+    },
+    "autoload-dev": {
+        "psr-4": {"Distill\\EntityMapper\\Test\\": "tests/"}
+    },
+    "require-dev": {
+        "phpunit/phpunit": "~4.7@dev"
+    }
+}
