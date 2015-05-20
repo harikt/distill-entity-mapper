@@ -1,6 +1,6 @@
 {
     "name": "distill/entity-mapper",
-    "description": "Object Mapping",
+    "description": "Object Mapping Prototype",
     "license": "UNLICENSE",
     "authors": [
         {
@@ -12,11 +12,5 @@
     "require": {},
     "autoload": {
         "psr-4": {"Distill\\EntityMapper\\": "src/"}
-    },
-    "autoload-dev": {
-        "psr-4": {"Distill\\EntityMapper\\Test\\": "tests/"}
-    },
-    "require-dev": {
-        "phpunit/phpunit": "~4.7@dev"
     }
 }
