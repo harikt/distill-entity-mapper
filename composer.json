@@ -8,8 +8,9 @@
             "email": "ralph@ralphschindler.com"
         }
     ],
-    "minimum-stability": "dev",
-    "require": {},
+    "require": {
+        "distill/db":"1.*@dev"
+    },
     "autoload": {
         "psr-4": {"Distill\\EntityMapper\\": "src/"}
     }
