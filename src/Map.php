@@ -8,15 +8,8 @@ class Map implements \ArrayAccess
     const RELATION_TYPE_COLLECTION = 'collection';
     const RELATION_TYPE_ENTITY = 'entity';
 
-    protected $defaultCollectionClass = null;
-
     /** @var Map\Entity[] */
     protected $entityMaps = [];
-
-    public function setDefaultCollectionClass($collectionClass)
-    {
-        $this->defaultCollectionClass = $collectionClass;
-    }
 
     /**
      * @param $entityClass
@@ -24,9 +17,9 @@ class Map implements \ArrayAccess
      * @param $idColumn
      * @return Map\Entity
      */
-    public function entity($entityClass, $table, $idColumn)
+    public function entity($entityClass, $table, $idColumn, $properties = '*')
     {
-        $this->entityMaps[$entityClass] = new Map\Entity($entityClass, $table, $idColumn, $this->defaultCollectionClass ?: Collection::class);
+        $this->entityMaps[$entityClass] = new Map\Entity($entityClass, $table, $idColumn);
         return $this->entityMaps[$entityClass];
     }
 

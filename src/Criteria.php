@@ -76,9 +76,10 @@ class Criteria
      * @param string $relation
      * @return array
      */
-    public function getRelationPredicates($relation)
+    public function getRelationPredicates($relation = null)
     {
-        return $this->relationPredicates[$relation];
+
+        return ($relation) ? $this->relationPredicates[$relation] : $this->relationPredicates;
     }
 
     public function setNumberPerPage($numberPerPage)

@@ -1,13 +1,12 @@
 <?php
 
-namespace Distill\EntityMapper;
+namespace Distill\EntityMapper\Collection;
 
-class Collection implements \IteratorAggregate
+class PaginatedCollection extends Collection
 {
     protected $page = null;
     protected $numberPerPage = null;
     protected $total = null;
-    protected $entities;
 
     public function getPage()
     {
@@ -37,16 +36,6 @@ class Collection implements \IteratorAggregate
     public function getTotal()
     {
         return $this->total;
-    }
-
-    public function append($entity)
-    {
-        $this->entities[] = $entity;
-    }
-
-    public function getIterator()
-    {
-        return new \ArrayIterator($this->entities);
     }
 }
 

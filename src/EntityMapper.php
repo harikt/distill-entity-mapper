@@ -30,8 +30,8 @@ class EntityMapper
 
         $e = $this->map[$criteria->getEntity()];
 
-        /** @var Collection $entityCollection */
-        $entityCollection = new $e->collectionClass;
+        $entityCollection = new Collection\PaginatedCollection();
+        $entityCollection->setCriteria($criteria);
 
         $entitySelect = $this->db->sql()->select();
         $entitySelect->usePrefixInColumnAliases(true);
@@ -138,22 +138,27 @@ class EntityMapper
         $entityIdentityMap = [];
         $entityStatement = $entitySelect->prepare();
 
-        foreach ($entityStatement->execute() as $row) {
+        foreach ($entityStatement->execute() as $rowArray) {
             foreach ($embeddedRelationEntityMap as $relationName => $relationEntityClass) {
                 if (!in_array($relationEntityClass, $embeddedRelations)) {
                     continue;
                 }
-                $row[$e->table][$e->relations[$relationEntityClass]->property] = $relEntity = $this->createEntity($relationEntityClass);
-                $this->mapData($relEntity, $row[$relationName]);
+                $rowArray[$e->table][$e->relations[$relationEntityClass]->property] = $relEntity = $this->createEntity($relationEntityClass);
+                $this->setEntityState($relEntity, $rowArray[$relationName]->toArray());
             }
             unset($relationName, $relationEntityClass);
 
             $entity = $this->createEntity($entityClass);
-            $this->mapData($entity, $row[$e->table]);
+            $this->setEntityState($entity, $rowArray[$e->table]->toArray());
             $entityCollection->append($entity);
-            $entityIdentityMap[$row[$e->table][$e->idColumn]] = $entity;
+            $entityIdentityMap[$rowArray[$e->table][$e->idColumn]] = $entity;
         }
-        unset($row, $entity);
+        unset($rowArray, $entity);
+
+        // return early as there are no entities found matching criteria
+        if (!$entityIdentityMap) {
+            return $entityCollection;
+        }
 
         // get size of full set (count)
         if ($criteria->getNumberPerPage() !== null) {
@@ -188,18 +193,18 @@ class EntityMapper
             $relationEntityStatement = $relationEntitySelect->prepare();
 
             $relationCollections = [];
-            foreach ($relationEntityStatement->execute() as $row) {
-                if (!isset($relationCollections[$row[$r->remoteIdColumn]])) {
-                    $relationCollections[$row[$r->remoteIdColumn]] = new $re->collectionClass;
+            foreach ($relationEntityStatement->execute() as $rowArray) {
+                if (!isset($relationCollections[$rowArray[$r->remoteIdColumn]])) {
+                    $relationCollections[$rowArray[$r->remoteIdColumn]] = new Collection\Collection();
                 }
                 $relationEntity = $this->createEntity($re->entityClass);
-                $this->mapData($relationEntity, $row);
-                $relationCollections[$row[$r->remoteIdColumn]]->append($relationEntity);
+                $this->setEntityState($relationEntity, $rowArray);
+                $relationCollections[$rowArray[$r->remoteIdColumn]]->append($relationEntity);
             }
-            unset($row);
+            unset($rowArray);
 
             foreach ($relationCollections as $reId => $reColl) {
-                $this->mapData($entityIdentityMap[$reId], [$r->property => $reColl]);
+                $this->setEntityState($entityIdentityMap[$reId], [$r->property => $reColl]);
             }
             unset($reId, $reColl);
         }
@@ -210,53 +215,22 @@ class EntityMapper
 
     protected function createEntity($entityClass)
     {
-        $refs = $this->map->get($entityClass)->getReflections();
-        $entity = $refs['class']->newInstanceWithoutConstructor();
-        return $entity;
+        if (method_exists($entityClass, 'createEntity')) {
+            return $entityClass::createEntity();
+        }
+        /** @var \ReflectionClass $ref */
+        $ref = $this->map->get($entityClass)->getReflections()['class'];
+        return $ref->newInstanceWithoutConstructor();
+
     }
 
-    protected function mapData($entity, $data)
+    protected function setEntityState($entity, $data)
     {
         $entityClass = get_class($entity);
-
-        $e = $this->map[$entityClass];
-
-        if (!$e) {
-            throw new \RuntimeException('Unknown entity expecting to be mapped ' . $entityClass);
+        if (!method_exists($entityClass, 'setEntityState')) {
+            throw new \RuntimeException("$entityClass must implement static function createEntityFromDataSourceArray()");
         }
-
-        $reflections = $e->getReflections();
-
-        foreach ($e->properties as $index => $property) {
-            $column = $e->columns[$index];
-            if (!isset($data[$column])) {
-                continue;
-            }
-            $value = $data[$column];
-
-            // @todo this needs to be abstracted
-            if (isset($e->transformers[$property])) {
-                foreach ($e->transformers[$property] as $t) {
-                    switch ($t) {
-                        case 'json':
-                            $value = json_decode($value, true);
-                            break;
-                        default:
-                            throw new \RuntimeException("Do not currently support $t");
-                    }
-                }
-            }
-
-            $reflections['properties'][$property]->setValue($entity, $value);
-        }
-
-        foreach ($e->relations as $name => $r) {
-            $property = $r->property;
-            if (!isset($data[$property], $reflections['properties'][$r->property])) {
-                continue;
-            }
-            $reflections['properties'][$r->property]->setValue($entity, $data[$property]);
-        }
+        $entityClass::setEntityState($entity, $data);
     }
 
     protected function createSqlPredicate($l, $op, $r)

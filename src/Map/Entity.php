@@ -7,26 +7,23 @@ use Distill\EntityMapper\Collection;
 class Entity // implements \ArrayAccess
 {
     public $entityClass;
-    public $collectionClass = Collection::class;
     public $table;
     public $idColumn;
-    public $properties = [];
-    public $columns = [];
-    public $transformers = [];
+    public $columns = '*';
     /** @var Relation[] */
     public $relations = [];
     /** @var \ReflectionProperty[] */
     protected $reflections;
 
-    public function __construct($entityClass, $table, $idColumn, $collectionClass = Collection::class)
+    public function __construct($entityClass, $table, $idColumn, $columns = '*')
     {
         $this->entityClass = $entityClass;
         $this->table = $table;
 
         $this->idColumn = $idColumn;
-        $this->properties($idColumn);
-
-        $this->collectionClass = $collectionClass;
+        if ($columns !== '*') {
+            $this->columns($columns);
+        }
     }
 
     public function setEntityClass($entityClass)
@@ -34,27 +31,22 @@ class Entity // implements \ArrayAccess
         $this->entityClass = $entityClass;
     }
 
-    public function properties(...$properties)
+    public function columns($columns)
     {
-        $index = count($this->properties);
-        foreach ($properties as $property) {
-            $columnName = $propertyName = $property;
-            if (is_array($property)) {
-                $propertyName = key($property);
-                $columnName = $property[$propertyName];
+        if ($this->columns = '*') {
+            $this->columns = [];
+        }
+        if (is_string($columns) && func_num_args() > 1) {
+            $columns = func_get_args();
+        }
+        if (is_array($columns)) {
+            foreach ($columns as $column) {
+                if (!is_string($column)) {
+                    throw new \InvalidArgumentException('columns must be strings');
+                }
+                $this->columns[] = $column;
             }
-            $this->properties[$index] = $propertyName;
-            $this->columns[$index] = $columnName;
-            $index++;
         }
-    }
-
-    public function transform($property, $transformer)
-    {
-        if (!isset($this->transformers[$property])) {
-            $this->transformers[$property] = [];
-        }
-        $this->transformers[$property][] = $transformer;
     }
 
     /**
