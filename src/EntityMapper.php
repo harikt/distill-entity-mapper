@@ -3,6 +3,7 @@
 namespace Distill\EntityMapper;
 
 use Distill\Db\Db;
+use Distill\Db\Sql\Criteria\Like;
 use Distill\Db\Sql\Criteria\Operator;
 use Distill\Db\Sql\Expression;
 use Distill\Db\Sql\Select;
@@ -237,6 +238,9 @@ class EntityMapper
     {
         // @todo this needs to be abstracted
         switch ($op) {
+            case 'like':
+            case '≈':
+                return new Like($l, $r);
             case '!=':
             case '>':
             case '<':
