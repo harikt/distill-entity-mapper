@@ -10,8 +10,37 @@ class Criteria
     protected $relationPredicates = [];
     protected $order = [];
 
-    protected $numberPerPage = null;
-    protected $page = 1;
+    protected $limit = null;
+    protected $offset = 1;
+
+    public static function createFromArray(array $parameters)
+    {
+        $criteria = new static;
+        foreach ($parameters as $n => $v) {
+            switch (strtolower(str_replace('_', '', $n))) {
+                case 'entity':
+                    $criteria->setEntity($v);
+                    break;
+                case 'embedded':
+                case 'embeddedrelations':
+                    $criteria->setEmbeddedRelations($v);
+                    break;
+                case 'predicates':
+                case 'entitypredicates':
+                    foreach ($v as $v2) {
+                        $criteria->addEntityPredicate($v2[0], $v2[1], $v2[2]);
+                    }
+                    break;
+                case 'relationpredicates':
+                    throw new \RuntimeException('incomplete implementation');
+                    foreach ($v as $v2) {
+                        //$criteria->addRelationPredicate($v2[0], $v2[1], $v2[2]);
+                    }
+                    break;
+            }
+        }
+        return $criteria;
+    }
 
     public function __construct($entity = null, array $embeddedRelations = [])
     {
@@ -82,24 +111,24 @@ class Criteria
         return ($relation) ? $this->relationPredicates[$relation] : $this->relationPredicates;
     }
 
-    public function setNumberPerPage($numberPerPage)
+    public function setLimit($limit)
     {
-        $this->numberPerPage = (int) $numberPerPage;
+        $this->limit = (int) $limit;
     }
 
-    public function getNumberPerPage()
+    public function getLimit()
     {
-        return $this->numberPerPage;
+        return $this->limit;
     }
 
-    public function setPage($page)
+    public function setOffset($offset)
     {
-        $this->page = (int) $page;
+        $this->offset = (int) $offset;
     }
 
-    public function getPage()
+    public function getOffset()
     {
-        return $this->page;
+        return $this->offset;
     }
 
     public function hasOrder()

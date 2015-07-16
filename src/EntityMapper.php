@@ -7,13 +7,14 @@ use Distill\Db\Sql\Criteria\Like;
 use Distill\Db\Sql\Criteria\Operator;
 use Distill\Db\Sql\Expression;
 use Distill\Db\Sql\Select;
+use Distill\Db\Sql\TableIdentifier;
 
 class EntityMapper
 {
+    /** @var Map */
     protected $map;
     protected $db;
-    protected $queryPlanner;
-    protected $entityFactory;
+    protected $commandBus;
 
     public function __construct(Db $db, Map $map)
     {
@@ -21,17 +22,50 @@ class EntityMapper
         $this->map = $map;
     }
 
-    public function get(Criteria $criteria)
+    public function getDb()
     {
-        $entityClass = $criteria->getEntity();
+        return $this->db;
+    }
+
+    public function getMap()
+    {
+        return $this->map;
+    }
+
+    /*
+    public function queryOne($criteria)
+    {
+        $entities = $this->query($criteria);
+        if ($entities->count() !== 1) {
+            return false;
+        }
+        return $entities->getIterator()->current();
+    }
+    */
+
+    /**
+     * @param $criteria
+     * @return Collection
+     */
+    public function query($criteria)
+    {
+        if (!$criteria instanceof Criteria) {
+            if (!is_array($criteria)) {
+                throw new \InvalidArgumentException('$criteria must be an array or Criteria');
+            } else {
+                $criteria = Criteria::createFromArray($criteria);
+            }
+        }
+
+        $entityName = $criteria->getEntity();
 
         if (!$this->map[$criteria->getEntity()]) {
-            throw new \InvalidArgumentException("$entityClass is not a valid mappable entity");
+            throw new \InvalidArgumentException("$entityName is not a valid mappable entity");
         }
 
         $e = $this->map[$criteria->getEntity()];
 
-        $entityCollection = new Collection\PaginatedCollection();
+        $entityCollection = new Collection();
         $entityCollection->setCriteria($criteria);
 
         $entitySelect = $this->db->sql()->select();
@@ -40,13 +74,13 @@ class EntityMapper
         $entitySelect->from($e->table);
         $entitySelect->columns($e->columns);
 
-        $numberPerPage = $criteria->getNumberPerPage();
+        $numberPerPage = $criteria->getLimit();
         if ($numberPerPage !== null) {
-            $page = $criteria->getPage();
+            $page = $criteria->getOffset();
             $entitySelect->limit($numberPerPage);
             $entitySelect->offset($numberPerPage * ($page - 1));
-            $entityCollection->setPage($page);
-            $entityCollection->setNumberPerPage($numberPerPage);
+            $entityCollection->setOffset($page);
+            $entityCollection->setLimit($numberPerPage);
         }
         unset($numberPerPage);
 
@@ -60,7 +94,9 @@ class EntityMapper
         // set reduction through entity predicates
         if ($criteria->hasEntityPredicates()) {
             foreach ($criteria->getEntityPredicates() as $predicate) {
-                $entitySelect->where->addPredicate($this->createSqlPredicate("{$e->table}.{$predicate[0]}", $predicate[1], $predicate[2]));
+                $entityTable = ($e->table instanceof TableIdentifier) ? $e->table->getTable() : $e->table;
+                $entitySelect->where->addPredicate($this->createSqlPredicate("{$entityTable}.{$predicate[0]}", $predicate[1], $predicate[2]));
+                unset($entityTable);
             }
             unset($predicate);
         }
@@ -74,10 +110,11 @@ class EntityMapper
             if (!isset($e->relations[$relation]) || $e->relations[$relation]->type !== 'collection') {
                 continue;
             }
-            $re = $this->map[$e->relations[$relation]->entityClass];
-            if (!$re) {
-                throw new \InvalidArgumentException("Relation map does not exist for request relation: $relation");
-            }
+            //$re = $this->map[$e->relations[$relation]];
+            //if (!$re) {
+            //    throw new \InvalidArgumentException("Relation map does not exist for request relation: $relation");
+            //}
+            $re = $e->relations[$relation]->relationEntityMap;
 
             $relationSubQuery = $this->db->sql()->select();
 
@@ -103,7 +140,7 @@ class EntityMapper
                 continue;
             }
 
-            $re = $this->map[$e->relations[$relation]->entityClass];
+            $re = $this->map[$e->relations[$relation]->relationEntityMap];
 
             if (!$re) {
                 throw new \InvalidArgumentException("Relation map does not exist for requested relation: $relation");
@@ -144,25 +181,29 @@ class EntityMapper
                 if (!in_array($relationEntityClass, $embeddedRelations)) {
                     continue;
                 }
-                $rowArray[$e->table][$e->relations[$relationEntityClass]->property] = $relEntity = $this->createEntity($relationEntityClass);
-                $this->setEntityState($relEntity, $rowArray[$relationName]->toArray());
+                $rowArray[$e->table][$e->relations[$relationEntityClass]->property] = $relEntity = $this->map[$relationEntityClass]->createEntity();
+                $this->map[$relationEntityClass]->setEntityState($relEntity, $rowArray[$relationName]->toArray());
             }
             unset($relationName, $relationEntityClass);
 
-            $entity = $this->createEntity($entityClass);
-            $this->setEntityState($entity, $rowArray[$e->table]->toArray());
+            $entity = $this->map[$entityName]->createEntity();
+            $dataKey = ($e->table instanceof TableIdentifier) ? $e->table->getTable() : $e->table;
+            $this->map[$entityName]->setEntityState($entity, $rowArray[$dataKey]->toArray());
             $entityCollection->append($entity);
-            $entityIdentityMap[$rowArray[$e->table][$e->idColumn]] = $entity;
+            $entityIdentityMap[$rowArray[$dataKey][$e->idColumn]] = $entity;
         }
         unset($rowArray, $entity);
 
         // return early as there are no entities found matching criteria
         if (!$entityIdentityMap) {
+            if ($criteria->getLimit() === 1) {
+                return false;
+            }
             return $entityCollection;
         }
 
         // get size of full set (count)
-        if ($criteria->getNumberPerPage() !== null) {
+        if ($criteria->getLimit() > 1) {
             $entityCountSelect = $this->db->sql()->select();
             $entitySelectSubQuery = clone $entitySelect;
             $entitySelectSubQuery->reset(Select::LIMIT);
@@ -181,7 +222,7 @@ class EntityMapper
             }
 
             $r = $e->relations[$relation];
-            $re = $this->map[$r->entityClass];
+            $re = $r->relationEntityMap;
 
             if (!$re) {
                 throw new \RuntimeException('No relation entity map found');
@@ -196,42 +237,88 @@ class EntityMapper
             $relationCollections = [];
             foreach ($relationEntityStatement->execute() as $rowArray) {
                 if (!isset($relationCollections[$rowArray[$r->remoteIdColumn]])) {
-                    $relationCollections[$rowArray[$r->remoteIdColumn]] = new Collection\Collection();
+                    $relationCollections[$rowArray[$r->remoteIdColumn]] = [];
                 }
-                $relationEntity = $this->createEntity($re->entityClass);
-                $this->setEntityState($relationEntity, $rowArray);
-                $relationCollections[$rowArray[$r->remoteIdColumn]]->append($relationEntity);
+                $relationEntity = $this->map[$re->entityClass]->createEntity();
+                $this->map[$re->entityClass]->setEntityState($relationEntity, $rowArray);
+                $relationCollections[$rowArray[$r->remoteIdColumn]][] = $relationEntity;
             }
             unset($rowArray);
 
             foreach ($relationCollections as $reId => $reColl) {
-                $this->setEntityState($entityIdentityMap[$reId], [$r->property => $reColl]);
+                //$this->map[get_class($entityIdentityMap[$reId])]->setEntityRelationState($entityIdentityMap[$reId], $relation, $reColl);
+                $e->relations[$relation]->setRelationState($entityIdentityMap[$reId], $reColl);
             }
             unset($reId, $reColl);
         }
         unset($relation, $relationCollections);
 
+        if ($criteria->getLimit() === 1) {
+            if ($entityCollection->count() === 1) {
+                return $entityCollection->getIterator()->current();
+            } else {
+                return false;
+            }
+        }
+
         return $entityCollection;
     }
 
-    protected function createEntity($entityClass)
+    public function command($command)
     {
-        if (method_exists($entityClass, 'createEntity')) {
-            return $entityClass::createEntity();
+        if (!$command instanceof Command) {
+            if (is_array($command)) {
+                $command = Command::createFromArray($command);
+            } else {
+                throw new \InvalidArgumentException('$command must be a Command object or an array');
+            }
         }
-        /** @var \ReflectionClass $ref */
-        $ref = $this->map->get($entityClass)->getReflections()['class'];
-        return $ref->newInstanceWithoutConstructor();
 
-    }
+        $name = $command->getName();
+        $entity = $command->getEntity();
+        // $context = $command->getContext();
+        switch ($name) {
+            case 'insert':
+                $entityName = get_class($entity);
+                if ($entityName === GenericEntity::class) {
+                    throw new \Exception('generic entity commands currently not supported');
+                }
+                $entityMap = $this->map[$entityName];
+                $data = $entityMap->getEntityColumnData($entity);
+                if ($data[$entityMap->idColumn] == null) {
+                    unset($data[$entityMap->idColumn]);
+                }
 
-    protected function setEntityState($entity, $data)
-    {
-        $entityClass = get_class($entity);
-        if (!method_exists($entityClass, 'setEntityState')) {
-            throw new \RuntimeException("$entityClass must implement static function createEntityFromDataSourceArray()");
+                // @todo refactor: prefer embedded, but consult context for relation data
+
+                if ($entityMap->relations) {
+                    foreach ($entityMap->relations as $relation) {
+                        switch ($relation->type) {
+                            case 'entity':
+                                $relationIdentity = $relation->getRelationEntityIdentity($entity);
+                                $data[$relation->localIdColumn] = $relationIdentity;
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                }
+
+                $insert = $this->db->sql()->insert();
+                $insert->into($entityMap->table)->values($data);
+                $statement = $insert->prepare();
+                $insertResult = $statement->execute();
+                $entityMap->setEntityIdentity($entity, $insertResult->getGeneratedValue());
+                break;
+            case 'update':
+                echo 'Updating';
+                break;
+            case 'delete':
+                echo 'Deleting';
+                break;
+            default:
+                throw new \InvalidArgumentException('Command name provided is currently unsupported');
         }
-        $entityClass::setEntityState($entity, $data);
     }
 
     protected function createSqlPredicate($l, $op, $r)

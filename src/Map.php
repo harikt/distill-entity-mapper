@@ -8,53 +8,70 @@ class Map implements \ArrayAccess
     const RELATION_TYPE_COLLECTION = 'collection';
     const RELATION_TYPE_ENTITY = 'entity';
 
-    /** @var Map\Entity[] */
-    protected $entityMaps = [];
+    /** @var Map\EntityMap[] */
+    public $entityMaps = [];
 
     /**
      * @param $entityClass
      * @param $table
      * @param $idColumn
-     * @return Map\Entity
+     * @return Map\EntityMap
      */
-    public function entity($entityClass, $table, $idColumn, $properties = '*')
+    public function entityMap($name, $table, $idColumn, $entityClass = GenericEntity::class, $columns = [])
     {
-        $this->entityMaps[$entityClass] = new Map\Entity($entityClass, $table, $idColumn);
-        return $this->entityMaps[$entityClass];
+        $this->entityMaps[$name] = new Map\EntityMap($name, $table, $idColumn, $entityClass, $columns);
+        return $this->entityMaps[$name];
     }
 
-    public function entityAlias($aliasEntityClass, $primaryEntityClass)
+    public function entityMapAlias($aliasName, $primaryName)
     {
-        $entity = clone $this->entityMaps[$primaryEntityClass];
-        $this->entityMaps[$aliasEntityClass] = $entity;
-        $entity->setEntityClass($aliasEntityClass);
+        $entity = clone $this->entityMaps[$primaryName];
+        $this->entityMaps[$aliasName] = $entity;
         return $entity;
     }
 
     /**
-     * @param $entityClass
-     * @return Map\Entity
+     * @param $name
+     * @return Map\EntityMap
      */
-    public function get($entityClass)
+    public function get($name)
     {
-        if (!isset($this->entityMaps[$entityClass])) {
+        if (!isset($this->entityMaps[$name])) {
             return false;
         }
-        return $this->entityMaps[$entityClass];
+        return $this->entityMaps[$name];
     }
 
     public function offsetExists($offset)
     {
-        return array_key_exists($offset, $this->entityMaps);
+        if (isset($this->entityMaps[$offset])) {
+            return true;
+        } else {
+            foreach ($this->entityMaps as $entity) {
+                if ($entity->entityClass === $offset) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     /**
      * @param mixed $offset
-     * @return Map\Entity
+     * @return Map\EntityMap
      */
     public function offsetGet($offset)
     {
-        return $this->entityMaps[$offset];
+        if (isset($this->entityMaps[$offset])) {
+            return $this->entityMaps[$offset];
+        } else {
+            foreach ($this->entityMaps as $entity) {
+                if ($entity->entityClass === $offset) {
+                    return $entity;
+                }
+            }
+            return false;
+        }
     }
 
     public function offsetSet($offset, $value)
