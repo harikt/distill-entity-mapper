@@ -5,27 +5,22 @@ namespace Distill\EntityMapper;
 class Command
 {
     protected $name;
-    protected $entity;
-    protected $context;
+    protected $parameters = [];
 
-    public static function createFromArray(array $parameters)
+    public static function createFromArray(array $array)
     {
-        $name = $entity = $context = null;
-        foreach ($parameters as $n => $v) {
-            switch ($n) {
-                case 'name': $name = $v; break;
-                case 'entity': $entity = $v; break;
-                case 'context': $context = $v; break;
-            }
+        if (!isset($array['name'])) {
+            throw new \InvalidArgumentException('Command is missing name');
         }
-        return new self($name, $entity, $context);
+        $name = $array['name'];
+        unset($array['name']);
+        return new self($name, $array);
     }
 
-    public function __construct($name, $entity, $context = null)
+    public function __construct($name, array $parameters = [])
     {
         $this->name = $name;
-        $this->entity = $entity;
-        $this->context = $context;
+        $this->parameters = $parameters;
     }
 
     public function getName()
@@ -33,13 +28,8 @@ class Command
         return $this->name;
     }
 
-    public function getEntity()
+    public function getParameters()
     {
-        return $this->entity;
-    }
-
-    public function getContext()
-    {
-        return $this->context;
+        return $this->parameters;
     }
 }

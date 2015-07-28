@@ -20,6 +20,10 @@ class EntityMapper
     {
         $this->db = $db;
         $this->map = $map;
+        $this->commandBus = [
+            'entity_save' => [$this, 'commandEntitySave'],
+            'entity_delete' => [$this, 'commandEntityDelete'],
+        ];
     }
 
     public function getDb()
@@ -114,7 +118,7 @@ class EntityMapper
             //if (!$re) {
             //    throw new \InvalidArgumentException("Relation map does not exist for request relation: $relation");
             //}
-            $re = $e->relations[$relation]->relationEntityMap;
+            $relationMap = $e->relations[$relation]->relationEntityMap;
 
             $relationSubQuery = $this->db->sql()->select();
 
@@ -122,15 +126,15 @@ class EntityMapper
                 continue;
             }
 
-            $relationSubQuery->from($re->table);
+            $relationSubQuery->from($relationMap->table);
             $relationSubQuery->columns([$e->relations[$relation]->remoteIdColumn]);
 
             foreach ($criteria->getRelationPredicates($relation) as $predicate) {
-                $relationSubQuery->where->addPredicate($this->createSqlPredicate("{$re->table}.{$predicate[0]}", $predicate[1], $predicate[2]));
+                $relationSubQuery->where->addPredicate($this->createSqlPredicate("{$relationMap->table}.{$predicate[0]}", $predicate[1], $predicate[2]));
             }
             $relationSubQueries[] = $relationSubQuery;
         }
-        unset($relation, $relationSubQuery, $re);
+        unset($relation, $relationSubQuery, $relationMap);
 
         // find entity relations
         $embeddedRelationEntityMap = [];
@@ -140,29 +144,31 @@ class EntityMapper
                 continue;
             }
 
-            $re = $this->map[$e->relations[$relation]->relationEntityMap];
+            $relationMap = $e->relations[$relation];
+            $relationEntityMap = $e->relations[$relation]->relationEntityMap;
 
-            if (!$re) {
+            if (!$relationMap) {
                 throw new \InvalidArgumentException("Relation map does not exist for requested relation: $relation");
             }
 
+            //$entityTable = ($relationEntityMap->table instanceof TableIdentifier) ? $relationEntityMap->table->getExpressionData()[0] : $relationEntityMap->table;
             $entitySelect->join(
-                [$e->relations[$relation]->sqlAlias => $re->table],
-                "{$e->table}.{$e->relations[$relation]->localIdColumn} = {$e->relations[$relation]->sqlAlias}.{$e->idColumn}",
-                $re->columns,
+                [$relationMap->name => $relationEntityMap->table],
+                "{$relationMap->localIdColumn} = {$relationMap->name}.{$e->idColumn}",
+                $relationEntityMap->columns,
                 Select::JOIN_LEFT
             );
 
             // set reduction through one-to-one relationship predicates
             if ($criteria->hasRelationPredicates($relation)) {
                 foreach ($criteria->getRelationPredicates($relation) as $predicate) {
-                    $entitySelect->where->addPredicate($this->createSqlPredicate("{$e->relations[$relation]->sqlAlias}.{$predicate[0]}", $predicate[1], $predicate[2]));
+                    $entitySelect->where->addPredicate($this->createSqlPredicate("{$relationMap->name}.{$predicate[0]}", $predicate[1], $predicate[2]));
                 }
             }
 
-            $embeddedRelationEntityMap[$e->relations[$relation]->sqlAlias] = $re->entityClass;
+            $embeddedRelationEntityMap[$relationMap->name] = $relationEntityMap->name;
         }
-        unset($relation, $re);
+        unset($relation, $relationMap, $relationEntityMap);
 
         if (isset($relationSubQueries)) {
             foreach ($relationSubQueries as $relationSubQuery) {
@@ -177,18 +183,24 @@ class EntityMapper
         $entityStatement = $entitySelect->prepare();
 
         foreach ($entityStatement->execute() as $rowArray) {
-            foreach ($embeddedRelationEntityMap as $relationName => $relationEntityClass) {
-                if (!in_array($relationEntityClass, $embeddedRelations)) {
+            $entityRelationsState = [];
+            foreach ($embeddedRelationEntityMap as $relationName => $relationEntityName) {
+                if (!in_array($relationName, $embeddedRelations)) {
                     continue;
                 }
-                $rowArray[$e->table][$e->relations[$relationEntityClass]->property] = $relEntity = $this->map[$relationEntityClass]->createEntity();
-                $this->map[$relationEntityClass]->setEntityState($relEntity, $rowArray[$relationName]->toArray());
+                $entityRelationsState[$relationName] = $relEntity = $this->map[$relationEntityName]->createEntity();
+                $this->map[$relationEntityName]->setEntityState($relEntity, $rowArray[$relationName]->toArray());
             }
-            unset($relationName, $relationEntityClass);
+            unset($relationName, $relationEntityName);
 
-            $entity = $this->map[$entityName]->createEntity();
+            $entity = $e->createEntity();
             $dataKey = ($e->table instanceof TableIdentifier) ? $e->table->getTable() : $e->table;
-            $this->map[$entityName]->setEntityState($entity, $rowArray[$dataKey]->toArray());
+            $e->setEntityState($entity, $rowArray[$dataKey]->toArray());
+
+            foreach ($entityRelationsState as $relationName => $relationState) {
+                $e->relations[$relationName]->setRelationState($entity, $relationState);
+            }
+
             $entityCollection->append($entity);
             $entityIdentityMap[$rowArray[$dataKey][$e->idColumn]] = $entity;
         }
@@ -222,15 +234,15 @@ class EntityMapper
             }
 
             $r = $e->relations[$relation];
-            $re = $r->relationEntityMap;
+            $relationMap = $r->relationEntityMap;
 
-            if (!$re) {
+            if (!$relationMap) {
                 throw new \RuntimeException('No relation entity map found');
             }
 
             $relationEntitySelect = $this->db->sql()->select();
-            $relationEntitySelect->from($re->table);
-            $relationEntitySelect->columns(array_merge($re->columns, [$r->remoteIdColumn]));
+            $relationEntitySelect->from($relationMap->table);
+            $relationEntitySelect->columns(array_merge($relationMap->columns, [$r->remoteIdColumn]));
             $relationEntitySelect->where->in($r->remoteIdColumn, array_keys($entityIdentityMap));
             $relationEntityStatement = $relationEntitySelect->prepare();
 
@@ -239,8 +251,8 @@ class EntityMapper
                 if (!isset($relationCollections[$rowArray[$r->remoteIdColumn]])) {
                     $relationCollections[$rowArray[$r->remoteIdColumn]] = [];
                 }
-                $relationEntity = $this->map[$re->entityClass]->createEntity();
-                $this->map[$re->entityClass]->setEntityState($relationEntity, $rowArray);
+                $relationEntity = $this->map[$relationMap->entityClass]->createEntity();
+                $this->map[$relationMap->entityClass]->setEntityState($relationEntity, $rowArray);
                 $relationCollections[$rowArray[$r->remoteIdColumn]][] = $relationEntity;
             }
             unset($rowArray);
@@ -275,50 +287,85 @@ class EntityMapper
         }
 
         $name = $command->getName();
-        $entity = $command->getEntity();
-        // $context = $command->getContext();
-        switch ($name) {
-            case 'insert':
-                $entityName = get_class($entity);
-                if ($entityName === GenericEntity::class) {
-                    throw new \Exception('generic entity commands currently not supported');
-                }
-                $entityMap = $this->map[$entityName];
-                $data = $entityMap->getEntityColumnData($entity);
-                if ($data[$entityMap->idColumn] == null) {
-                    unset($data[$entityMap->idColumn]);
-                }
-
-                // @todo refactor: prefer embedded, but consult context for relation data
-
-                if ($entityMap->relations) {
-                    foreach ($entityMap->relations as $relation) {
-                        switch ($relation->type) {
-                            case 'entity':
-                                $relationIdentity = $relation->getRelationEntityIdentity($entity);
-                                $data[$relation->localIdColumn] = $relationIdentity;
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                }
-
-                $insert = $this->db->sql()->insert();
-                $insert->into($entityMap->table)->values($data);
-                $statement = $insert->prepare();
-                $insertResult = $statement->execute();
-                $entityMap->setEntityIdentity($entity, $insertResult->getGeneratedValue());
-                break;
-            case 'update':
-                echo 'Updating';
-                break;
-            case 'delete':
-                echo 'Deleting';
-                break;
-            default:
-                throw new \InvalidArgumentException('Command name provided is currently unsupported');
+        if (!isset($this->commandBus[$name])) {
+            throw new \RuntimeException('A handler is not registered for command ' . $name);
         }
+
+        $handler = $this->commandBus[$name];
+        $handler($command->getParameters());
+    }
+
+    protected function commandEntitySave(array $parameters)
+    {
+        if (!isset($parameters['entity'])) {
+            throw new \RuntimeException('"entity" is required to be passed as a parameter for this command');
+        }
+        $entity = $parameters['entity'];
+        $entityName = get_class($entity);
+        if ($entityName === GenericEntity::class) {
+            throw new \Exception('generic entity commands currently not supported');
+        }
+        $entityMap = $this->map[$entityName];
+        $data = $entityMap->getEntityColumnData($entity);
+
+        $id = $data[$entityMap->idColumn];
+        unset($data[$entityMap->idColumn]);
+
+        $originalData = [];
+
+        // get original data
+        if ($id) {
+            $columns = $entityMap->columns;
+            foreach ($entityMap->relations as $relationName => $relation) {
+                if ($relation->type == 'entity') {
+                    $columns[] = $relation->localIdColumn;
+                }
+            }
+            $select = $this->db->sql()->select()
+                ->columns($columns)
+                ->from($entityMap->table)
+                ->where([$entityMap->idColumn => $id]);
+            $stmt = $select->prepare();
+            $result = $stmt->execute();
+            $originalData = $result->current();
+        }
+
+        if ($entityMap->relations) {
+            foreach ($entityMap->relations as $relation) {
+                switch ($relation->type) {
+                    case 'entity':
+                        $relationIdentity = $relation->getRelationEntityIdentity($entity);
+                        $data[$relation->localIdColumn] = $relationIdentity;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
+        if ($id !== null) {
+            foreach ($originalData as $n => $v) {
+                if (isset($data[$n]) && $originalData[$n] == $data[$n]) {
+                    unset($data[$n]);
+                }
+            }
+            $op = $this->db->sql()->update();
+            $op->table($entityMap->table)->set($data)->where(['id' => $id]);
+        } else {
+            $op = $this->db->sql()->insert();
+            $op->into($entityMap->table)->values($data);
+        }
+        $stmt = $op->prepare();
+        $result = $stmt->execute();
+
+        if ($id === null) {
+            $entityMap->setEntityState($entity, [$entityMap->idColumn => $result->getGeneratedValue()]);
+        }
+    }
+
+    protected function commandEntityDelete()
+    {
+
     }
 
     protected function createSqlPredicate($l, $op, $r)

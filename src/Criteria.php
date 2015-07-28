@@ -37,6 +37,9 @@ class Criteria
                         //$criteria->addRelationPredicate($v2[0], $v2[1], $v2[2]);
                     }
                     break;
+                case 'limit':
+                    $criteria->setLimit($v);
+                    break;
             }
         }
         return $criteria;

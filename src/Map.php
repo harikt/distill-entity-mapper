@@ -27,6 +27,7 @@ class Map implements \ArrayAccess
     {
         $entity = clone $this->entityMaps[$primaryName];
         $this->entityMaps[$aliasName] = $entity;
+        $entity->setName($aliasName);
         return $entity;
     }
 

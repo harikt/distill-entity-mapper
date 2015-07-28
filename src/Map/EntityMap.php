@@ -12,6 +12,7 @@ class EntityMap
     public $idColumn;
     public $entityClass;
     public $columns = [];
+    public $transformers = [];
     /** @var RelationMap[] */
     public $relations = [];
     public $initializeClassWith = null;
@@ -40,6 +41,12 @@ class EntityMap
         return $this;
     }
 
+    public function setName($name)
+    {
+        $this->name = $name;
+        return $this;
+    }
+
     public function setEntityClass($entityClass)
     {
         $this->entityClass = $entityClass;
@@ -63,6 +70,12 @@ class EntityMap
             $this->normalizedColumns[$column] = strtolower(str_replace('_', '', $column));
         }
     }
+
+    public function transform($column, $unserializer, $serializer = null)
+    {
+        $this->transformers[$column] = [$unserializer, $serializer];
+    }
+
 
     /**
      * @return RelationMap
@@ -110,6 +123,14 @@ class EntityMap
 
     public function setEntityState($entity, array $state)
     {
+        if ($this->transformers) {
+            foreach ($this->transformers as $column => $functions) {
+                if (isset($state[$column])) {
+                    $state[$column] = $functions[0]($state[$column]);
+                }
+            }
+        }
+
         if (method_exists($entity, 'setEntityState')) {
             $entity->setEntityState($state);
             goto INITIALIZE;
@@ -125,7 +146,7 @@ class EntityMap
         }
 
         foreach ($state as $name => $value) {
-            $normalName = (isset($this->normalizedColumns[$name])) ? $this->normalizedColumns[$name] : $name;
+            $normalName = (isset($this->normalizedColumns[$name])) ? $this->normalizedColumns[$name] : strtolower(str_replace('_', '', $name));
             if (isset($reflections['normalized_property_names'][$normalName], $reflections['properties'][$reflections['normalized_property_names'][$normalName]])) {
                 $reflections['properties'][$reflections['normalized_property_names'][$normalName]]->setValue($entity, $value);
             }
@@ -160,6 +181,11 @@ class EntityMap
                 $data[$column] = $reflections['properties'][$reflections['normalized_property_names'][$normalName]]->getValue($entity);
             }
         }
+
+        foreach ($this->transformers as $column => $functions) {
+            $data[$column] = $functions[1]($data[$column]);
+        }
+
         return $data;
     }
 
