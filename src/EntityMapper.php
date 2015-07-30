@@ -188,8 +188,11 @@ class EntityMapper
                 if (!in_array($relationName, $embeddedRelations)) {
                     continue;
                 }
-                $entityRelationsState[$relationName] = $relEntity = $this->map[$relationEntityName]->createEntity();
-                $this->map[$relationEntityName]->setEntityState($relEntity, $rowArray[$relationName]->toArray());
+                $re = $this->map[$relationEntityName];
+                if ($rowArray[$relationName][$re->idColumn] !== null) {
+                    $entityRelationsState[$relationName] = $relEntity = $this->map[$relationEntityName]->createEntity();
+                    $this->map[$relationEntityName]->setEntityState($relEntity, $rowArray[$relationName]->toArray());
+                }
             }
             unset($relationName, $relationEntityName);
 
@@ -335,7 +338,12 @@ class EntityMapper
                 switch ($relation->type) {
                     case 'entity':
                         $relationIdentity = $relation->getRelationEntityIdentity($entity);
-                        $data[$relation->localIdColumn] = $relationIdentity;
+                        // don't update unprovided relation entities (@todo figure this out later if this is the right behavior)
+                        if ($relationIdentity !== null) {
+                            $data[$relation->localIdColumn] = $relationIdentity;
+                        } else {
+                            unset($originalData[$relation->localIdColumn]);
+                        }
                         break;
                     default:
                         break;

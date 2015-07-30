@@ -2,7 +2,7 @@
 
 namespace Distill\EntityMapper;
 
-class Collection implements \IteratorAggregate, \Countable
+class Collection implements \IteratorAggregate, \Countable, \ArrayAccess
 {
     protected $criteria = null;
     protected $entities = [];
@@ -70,4 +70,26 @@ class Collection implements \IteratorAggregate, \Countable
         return $this->entities;
     }
 
+    public function offsetExists($offset)
+    {
+        return isset($this->entities[$offset]);
+    }
+
+    public function offsetGet($offset)
+    {
+        if (!isset($this->entities[$offset])) {
+            return false;
+        }
+        return $this->entities[$offset];
+    }
+
+    public function offsetSet($offset, $value)
+    {
+        throw new \RuntimeException('offsetSet is not supported');
+    }
+
+    public function offsetUnset($offset)
+    {
+        throw new \RuntimeException('offsetUnset is not supported');
+    }
 }

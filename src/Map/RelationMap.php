@@ -68,7 +68,11 @@ class RelationMap
             $ref = $reflections['properties'][$propertyName];
         }
         $relationEntity = $ref->getValue($entity);
-        return $this->relationEntityMap->getEntityIdentity($relationEntity);
+        if (is_object($relationEntity)) {
+            return $this->relationEntityMap->getEntityIdentity($relationEntity);
+        } else {
+            return null;
+        }
     }
 
 }
