@@ -78,15 +78,15 @@ class EntityMapper
         $entitySelect->from($e->table);
         $entitySelect->columns($e->columns);
 
-        $numberPerPage = $criteria->getLimit();
-        if ($numberPerPage !== null) {
-            $page = $criteria->getOffset();
-            $entitySelect->limit($numberPerPage);
-            $entitySelect->offset($numberPerPage * ($page - 1));
-            $entityCollection->setOffset($page);
-            $entityCollection->setLimit($numberPerPage);
+        $limit = $criteria->getLimit();
+        if ($limit !== null) {
+            $offset = $criteria->getOffset();
+            $entitySelect->limit($limit);
+            $entitySelect->offset($offset);
+            $entityCollection->setOffset($offset);
+            $entityCollection->setLimit($limit);
         }
-        unset($numberPerPage);
+        unset($limit);
 
         if ($criteria->hasOrder()) {
             foreach ($criteria->getOrder() as $order) {
