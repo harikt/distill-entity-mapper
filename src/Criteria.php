@@ -11,7 +11,7 @@ class Criteria
     protected $order = [];
 
     protected $limit = null;
-    protected $offset = 1;
+    protected $offset = 0;
 
     public static function createFromArray(array $parameters)
     {
