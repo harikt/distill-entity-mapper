@@ -119,7 +119,14 @@ class Criteria
 
     public function setLimit($limit)
     {
-        $this->limit = (int) $limit;
+        if (is_numeric($limit)) {
+            $this->limit = (int) $limit;
+        } elseif ($limit == null) {
+            $this->limit = null;
+        } else {
+            throw new \InvalidArgumentException('$limit must be a number or null');
+        }
+        return $this;
     }
 
     public function getLimit()
