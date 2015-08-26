@@ -31,7 +31,13 @@ class EntityMap
         $this->idColumn = $idColumn;
         $this->entityClass = $entityClass;
 
-        array_unshift($columns, $idColumn);
+        if (is_array($idColumn)) {
+            foreach ($idColumn as $idColumnIndividual) {
+                array_unshift($columns, $idColumnIndividual);
+            }
+        } else {
+            array_unshift($columns, $idColumn);
+        }
         $this->columns($columns);
     }
 
@@ -118,7 +124,17 @@ class EntityMap
 
     public function setEntityIdentity($entity, $identity)
     {
-        $entity->{$this->idColumn} = $identity;
+        if (is_array($this->idColumn)) {
+            if (!is_array($identity)) {
+                throw new \InvalidArgumentException('$identity must be an array for this type');
+            }
+            foreach ($this->idColumn as $idColumn) {
+                $entity->{$this->idColumn} = $identity[$idColumn];
+            }
+        } else {
+            $entity->{$this->idColumn} = $identity;
+        }
+
     }
 
     public function setEntityState($entity, array $state)
@@ -166,7 +182,15 @@ class EntityMap
     public function getEntityIdentity($entity)
     {
         $reflections = $this->getReflections();
-        return $reflections['properties'][$this->idColumn]->getValue($entity); // @todo refactor this
+        if (is_array($this->idColumn)) {
+            $identity = [];
+            foreach ($this->idColumn as $idColumn) {
+                $reflections['properties'][$idColumn]->getValue($entity); // @todo refactor this
+            }
+            return $identity;
+        } else {
+            return $reflections['properties'][$this->idColumn]->getValue($entity); // @todo refactor this
+        }
     }
 
     public function getEntityColumnData($entity)

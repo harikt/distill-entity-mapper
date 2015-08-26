@@ -358,7 +358,7 @@ class EntityMapper
                 }
             }
             $op = $this->db->sql()->update();
-            $op->table($entityMap->table)->set($data)->where(['id' => $id]);
+            $op->table($entityMap->table)->set($data)->where(['id' => $id]); // @todo this id should not be hard-coded
         } else {
             $op = $this->db->sql()->insert();
             $op->into($entityMap->table)->values($data);
@@ -371,9 +371,25 @@ class EntityMapper
         }
     }
 
-    protected function commandEntityDelete()
+    protected function commandEntityDelete(array $parameters)
     {
+        if (!isset($parameters['entity'])) {
+            throw new \RuntimeException('"entity" is required to be passed as a parameter for this command');
+        }
+        $entity = $parameters['entity'];
+        $entityName = get_class($entity);
+        if ($entityName === GenericEntity::class) {
+            throw new \Exception('generic entity commands currently not supported');
+        }
+        $entityMap = $this->map[$entityName];
+        $data = $entityMap->getEntityColumnData($entity);
 
+        $id = $data[$entityMap->idColumn];
+        $op = $this->db->sql()->delete();
+        $op->from($entityMap->table)->where(['id' => $id]); // @todo this id should not be hard-coded
+
+        $stmt = $op->prepare();
+        $stmt->execute();
     }
 
     protected function createSqlPredicate($l, $op, $r)
